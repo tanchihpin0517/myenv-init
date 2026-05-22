@@ -17,14 +17,14 @@ confirm_uninstall() {
         return 0
     fi
 
-    printf "Remove %s from this system? [y/N] " "$BIN_NAME" >/dev/tty
+    printf "Remove %s from this system? [Y/n] " "$BIN_NAME" >/dev/tty
     IFS= read -r answer </dev/tty
     case "$answer" in
-        [yY]|[yY][eE][sS]) ;;
-        *)
+        [nN]|[nN][oO])
             echo "Cancelled."
             exit 0
             ;;
+        *) ;;
     esac
 }
 
