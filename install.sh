@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+#
+# install.sh - Installer for the 'myenv' CLI.
+#
+# Tasks:
+# 1. Prompts for or loads a saved GitHub personal access token (~/.myenv-rs/config/token).
+# 2. Detects host OS (Linux, macOS) and architecture (x86_64, arm64).
+# 3. Fetches the latest 'myenv-rs' release details via the GitHub API.
+# 4. Downloads the matching platform archive (.tar.gz) using its asset ID.
+# 5. Extracts and installs the 'myenv' binary to ~/.myenv-rs/bin/.
+# 6. Symlinks the binary to ~/.local/bin/.
+# 7. Stores the GitHub token with read-only permissions.
+#
+# File structure:
+#   ~/.myenv-rs/
+#   ├── bin/
+#   │   └── myenv        # Installed CLI binary
+#   └── config/
+#       └── token        # GitHub access token (read-only)
+#
+# Usage:
+#   ./install.sh
+#
+
 set -euo pipefail
 
 OWNER="tanchihpin0517"

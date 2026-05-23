@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+#
+# uninstall.sh - Uninstaller for the 'myenv' CLI.
+#
+# Tasks:
+# 1. Confirms removal of the 'myenv' CLI from the system.
+# 2. Prompts whether to keep the saved GitHub token (~/.myenv-rs/config/token).
+# 3. Removes the symlink from ~/.local/bin/ if it points to the managed binary.
+# 4. Removes the installed binary and directories (or the entire ~/.myenv-rs folder if requested).
+#
+# File structure (after uninstall):
+#   If keeping token:
+#     ~/.myenv-rs/
+#     └── config/
+#         └── token      # Retained GitHub access token
+#   If removing token:
+#     (none - ~/.myenv-rs/ is completely removed)
+#
+# Usage:
+#   ./uninstall.sh
+#
+
 set -euo pipefail
 
 BIN_NAME="myenv"
