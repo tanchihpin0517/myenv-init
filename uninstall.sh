@@ -6,15 +6,15 @@
 # 1. Confirms removal of the 'myenv' CLI from the system.
 # 2. Prompts whether to keep the saved GitHub token (~/.myenv-rs/config/token).
 # 3. Removes the symlink from ~/.local/bin/ if it points to the managed binary.
-# 4. Removes the installed binary and directories (or the entire ~/.myenv-rs folder if requested).
+# 4. Removes bin/, registry.toml, formulas/, and optionally config/token, each in turn.
 #
 # File structure (after uninstall):
 #   If keeping token:
 #     ~/.myenv-rs/
 #     └── config/
-#         └── token      # Retained GitHub access token
+#         └── token           # Retained GitHub access token
 #   If removing token:
-#     (none - ~/.myenv-rs/ is completely removed)
+#     (installer paths removed; any other ~/.myenv-rs/ contents are left intact)
 #
 # Usage:
 #   ./uninstall.sh
@@ -27,6 +27,8 @@ INSTALL_ROOT="${HOME}/.myenv-rs"
 BIN_DIR="${INSTALL_ROOT}/bin"
 CONFIG_DIR="${INSTALL_ROOT}/config"
 TOKEN_FILE="${CONFIG_DIR}/token"
+REGISTRY_FILE="${INSTALL_ROOT}/registry.toml"
+FORMULAS_DIR="${INSTALL_ROOT}/formulas"
 LOCAL_BIN="${HOME}/.local/bin"
 LINK_PATH="${LOCAL_BIN}/${BIN_NAME}"
 BINARY_PATH="${BIN_DIR}/${BIN_NAME}"
@@ -98,12 +100,20 @@ elif [ -e "$LINK_PATH" ]; then
     echo "Skipped: $LINK_PATH (exists but is not a symlink)"
 fi
 
+remove_path "$BIN_DIR"
+remove_path "$REGISTRY_FILE"
+remove_path "$FORMULAS_DIR"
+
 if [ "$KEEP_TOKEN" = true ]; then
-    remove_path "$BIN_DIR"
     if [ -f "$TOKEN_FILE" ]; then
         echo "Kept: $TOKEN_FILE"
     fi
 else
+    remove_path "$TOKEN_FILE"
+    remove_path "$CONFIG_DIR"
+fi
+
+if [ -d "$INSTALL_ROOT" ] && [ -z "$(ls -A "$INSTALL_ROOT" 2>/dev/null)" ]; then
     remove_path "$INSTALL_ROOT"
 fi
 
