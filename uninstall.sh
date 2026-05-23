@@ -4,17 +4,17 @@
 #
 # Tasks:
 # 1. Confirms removal of the 'myenv' CLI from the system.
-# 2. Prompts whether to keep the saved GitHub token (~/.myenv-rs/config/token).
+# 2. Prompts whether to keep the saved GitHub token (~/.myenv/config/token).
 # 3. Removes the symlink from ~/.local/bin/ if it points to the managed binary.
 # 4. Removes bin/, registry.toml, formulas/, and optionally config/token, each in turn.
 #
 # File structure (after uninstall):
 #   If keeping token:
-#     ~/.myenv-rs/
+#     ~/.myenv/
 #     └── config/
 #         └── token           # Retained GitHub access token
 #   If removing token:
-#     (installer paths removed; any other ~/.myenv-rs/ contents are left intact)
+#     (installer paths removed; any other ~/.myenv/ contents are left intact)
 #
 # Usage:
 #   ./uninstall.sh
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 BIN_NAME="myenv"
-INSTALL_ROOT="${HOME}/.myenv-rs"
+INSTALL_ROOT="${HOME}/.myenv"
 BIN_DIR="${INSTALL_ROOT}/bin"
 CONFIG_DIR="${INSTALL_ROOT}/config"
 TOKEN_FILE="${CONFIG_DIR}/token"
