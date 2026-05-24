@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 #
-# install.sh - Installer for the 'myenv' CLI.
+# install.sh - Bootstrap installer for 'myenv' CLI tool.
 #
 # Tasks:
-# 1. Prompts for or loads a saved GitHub personal access token (~/.myenv/config/token).
-# 2. Detects host OS (Linux, macOS) and architecture (x86_64, arm64).
-# 3. Fetches the latest 'myenv' release details via the GitHub API.
-# 4. Downloads the matching platform archive (.tar.gz) using its asset ID.
-# 5. Extracts and installs the 'myenv' binary to ~/.myenv/bin/.
-# 6. Downloads the assets bundle (registry.toml + formulas/) and extracts to ~/.myenv/.
-# 7. Symlinks the binary to ~/.local/bin/.
-# 8. Stores the GitHub token with read-only permissions.
+# 1. Prompts for or loads a saved GitHub access token.
+# 2. Detects host OS and architecture.
+# 3. Fetches the release information via the GitHub API.
+# 4. Saves the GitHub access token (~/.myenv/config/token).
+# 5. Downloads the platform binary archive (.tar.gz) using its asset ID.
+# 6. Extracts and installs 'myenv' CLI binary to ~/.myenv/bin/.
+# 7. Dispatches the remaining tasks to the binary via `self install`.
 #
-# File structure:
+# Bootstrapped File structure before running `self install`:
 #   ~/.myenv/
 #   ├── bin/
-#   │   └── myenv           # Installed CLI binary
-#   ├── config/
-#   │   └── token           # GitHub access token (read-only)
-#   ├── registry.toml       # Formula dependency graph
-#   └── formulas/           # Per-formula Lua scripts
-#
-# Usage:
-#   ./install.sh
+#   │   └── myenv           # 'myenv' CLI binary
+#   └── config/
+#       └── token           # Saved GitHub access token (read-only 600)
 #
 
 set -euo pipefail
@@ -123,9 +117,7 @@ if [ "$OS" = "Linux" ]; then
     fi
     EXT="tar.gz"
 elif [ "$OS" = "Darwin" ]; then
-    if [ "$ARCH" = "x86_64" ]; then
-        TARGET="x86_64-apple-darwin"
-    elif [ "$ARCH" = "arm64" ]; then
+    if [ "$ARCH" = "arm64" ]; then
         TARGET="aarch64-apple-darwin"
     else
         echo "Unsupported architecture: $ARCH" >&2
@@ -152,6 +144,14 @@ fi
 
 echo "Latest version: $LATEST_VERSION"
 
+# Save token after successfully verifying that it works
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+if [ "$TOKEN_LOADED" = false ]; then
+    printf '%s\n' "$GITHUB_TOKEN" > "$TOKEN_FILE"
+fi
+chmod 600 "$TOKEN_FILE"
+
 # Resolve platform-specific archive and download via asset ID
 STAGING_DIR="${BIN_NAME}-${LATEST_VERSION}-${TARGET}"
 FILE_NAME="${STAGING_DIR}.${EXT}"
@@ -174,75 +174,14 @@ else
     exit 1
 fi
 
-mkdir -p "$BIN_DIR" "$CONFIG_DIR"
-chmod 700 "$CONFIG_DIR"
+mkdir -p "$BIN_DIR"
 
 install -m 755 "$BINARY_PATH" "$BIN_DIR/$BIN_NAME"
 
-echo "Installing formula bundle to $INSTALL_ROOT ..."
-download_release_asset "$ASSETS_FILE_NAME" "$TMP_DIR/$ASSETS_FILE_NAME"
-rm -rf "$INSTALL_ROOT/formulas"
-tar -xzf "$TMP_DIR/$ASSETS_FILE_NAME" -C "$INSTALL_ROOT" --strip-components=1
-
-echo "Recording release checksums to state.json ..."
-binary_checksum="$(get_asset_digest "$FILE_NAME")"
-assets_checksum="$(get_asset_digest "$ASSETS_FILE_NAME")"
-
-mkdir -p "${INSTALL_ROOT}/local"
-STATE_FILE="${INSTALL_ROOT}/local/state.json"
-
-if [ -f "$STATE_FILE" ]; then
-    # Clean up legacy update/sync blocks while keeping formulas
-    sed -i '/^[[:space:]]*"update":/,/^[[:space:]]*\}/d' "$STATE_FILE"
-    sed -i '/^[[:space:]]*"sync":/,/^[[:space:]]*\}/d' "$STATE_FILE"
-    sed -i '$d' "$STATE_FILE"
-    sed -i '$s/\([^,]\)$/\1,/' "$STATE_FILE"
-    cat <<EOF >> "$STATE_FILE"
-  "update": {
-    "binary_checksum": "${binary_checksum}",
-    "assets_checksum": "${assets_checksum}"
-  },
-  "sync": {
-    "last_time": $(date +%s)
-  }
-}
-EOF
+if [ -z "${DEBUG:-}" ]; then
+    echo "Bootstrapping complete myenv installation using 'self install'..."
+    "$BIN_DIR/$BIN_NAME" self install
 else
-    cat <<EOF > "$STATE_FILE"
-{
-  "formulas": {},
-  "update": {
-    "binary_checksum": "${binary_checksum}",
-    "assets_checksum": "${assets_checksum}"
-  },
-  "sync": {
-    "last_time": $(date +%s)
-  }
-}
-EOF
+    echo "Debug mode: skipping 'self install' execution."
 fi
 
-
-mkdir -p "$LOCAL_BIN"
-rm -f "$LOCAL_BIN/$BIN_NAME"
-ln -s "$BIN_DIR/$BIN_NAME" "$LOCAL_BIN/$BIN_NAME"
-
-if [ "$TOKEN_LOADED" = true ]; then
-    chmod 600 "$TOKEN_FILE"
-else
-    printf '%s\n' "$GITHUB_TOKEN" > "$TOKEN_FILE"
-    chmod 600 "$TOKEN_FILE"
-fi
-
-echo "=== Installation complete! ==="
-echo "Binary:   $BIN_DIR/$BIN_NAME"
-echo "Registry: $INSTALL_ROOT/registry.toml"
-echo "Formulas: $INSTALL_ROOT/formulas/"
-echo "Link:     $LOCAL_BIN/$BIN_NAME"
-echo "Token:    $TOKEN_FILE"
-if [[ ":${PATH}:" == *":${LOCAL_BIN}:"* ]]; then
-    echo "Run: $BIN_NAME --version"
-else
-    echo "Add to PATH: export PATH=\"$LOCAL_BIN:\$PATH\""
-    echo "Run: $BIN_NAME --version"
-fi
