@@ -100,6 +100,14 @@ download_release_asset() {
          -o "$dest_path"
 }
 
+get_asset_digest() {
+    local file_name="$1"
+    echo "$RELEASE_JSON" | \
+      grep -C 30 "\"name\": \"$file_name\"" | \
+      grep '"digest":' | \
+      sed -E 's/.*"digest": "([^"]+)".*/\1/' | head -n 1
+}
+
 echo "=== Installing $BIN_NAME ==="
 
 # Detect OS and architecture (target triple)
@@ -175,6 +183,45 @@ echo "Installing formula bundle to $INSTALL_ROOT ..."
 download_release_asset "$ASSETS_FILE_NAME" "$TMP_DIR/$ASSETS_FILE_NAME"
 rm -rf "$INSTALL_ROOT/formulas"
 tar -xzf "$TMP_DIR/$ASSETS_FILE_NAME" -C "$INSTALL_ROOT" --strip-components=1
+
+echo "Recording release checksums to state.json ..."
+binary_checksum="$(get_asset_digest "$FILE_NAME")"
+assets_checksum="$(get_asset_digest "$ASSETS_FILE_NAME")"
+
+mkdir -p "${INSTALL_ROOT}/local"
+STATE_FILE="${INSTALL_ROOT}/local/state.json"
+
+if [ -f "$STATE_FILE" ]; then
+    # Clean up legacy update/sync blocks while keeping formulas
+    sed -i '/^[[:space:]]*"update":/,/^[[:space:]]*\}/d' "$STATE_FILE"
+    sed -i '/^[[:space:]]*"sync":/,/^[[:space:]]*\}/d' "$STATE_FILE"
+    sed -i '$d' "$STATE_FILE"
+    sed -i '$s/\([^,]\)$/\1,/' "$STATE_FILE"
+    cat <<EOF >> "$STATE_FILE"
+  "update": {
+    "binary_checksum": "${binary_checksum}",
+    "assets_checksum": "${assets_checksum}"
+  },
+  "sync": {
+    "last_time": $(date +%s)
+  }
+}
+EOF
+else
+    cat <<EOF > "$STATE_FILE"
+{
+  "formulas": {},
+  "update": {
+    "binary_checksum": "${binary_checksum}",
+    "assets_checksum": "${assets_checksum}"
+  },
+  "sync": {
+    "last_time": $(date +%s)
+  }
+}
+EOF
+fi
+
 
 mkdir -p "$LOCAL_BIN"
 rm -f "$LOCAL_BIN/$BIN_NAME"

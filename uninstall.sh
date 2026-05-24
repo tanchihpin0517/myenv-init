@@ -104,6 +104,15 @@ remove_path "$BIN_DIR"
 remove_path "$REGISTRY_FILE"
 remove_path "$FORMULAS_DIR"
 
+STATE_FILE="${INSTALL_ROOT}/local/state.json"
+if [ -f "$STATE_FILE" ]; then
+    sed -i '/^[[:space:]]*"update":/,/^[[:space:]]*\}/d' "$STATE_FILE"
+    sed -i '/^[[:space:]]*"sync":/,/^[[:space:]]*\}/d' "$STATE_FILE"
+    sed -i ':a;N;$!ba;s/,[[:space:]]*\n\([[:space:]]*}\)/\n\1/g' "$STATE_FILE"
+    echo "Cleaned up update and sync state in: $STATE_FILE"
+fi
+
+
 if [ "$KEEP_TOKEN" = true ]; then
     if [ -f "$TOKEN_FILE" ]; then
         echo "Kept: $TOKEN_FILE"
