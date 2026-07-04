@@ -6,17 +6,22 @@
 # 1. Prompts for or loads a saved GitHub access token.
 # 2. Detects host OS and architecture.
 # 3. Fetches the release information via the GitHub API.
-# 4. Saves the GitHub access token (~/.myenv/config/token).
-# 5. Downloads the platform binary archive (.tar.gz) using its asset ID.
-# 6. Extracts and installs 'myenv' CLI binary to ~/.myenv/bin/.
+# 4. Saves the GitHub access token (~/.myenv/config/token) and settings.json.
+# 5. Downloads the release binary or builds from source at the latest tag.
+# 6. Installs 'myenv' CLI binary to ~/.myenv/bin/.
 # 7. Dispatches the remaining tasks to the binary via `self install`.
+#
+# Usage:
+#   ./install.sh [--binary-source prebuilt|source]
+#   curl -fsSL .../install.sh | bash -s -- --binary-source source
 #
 # Bootstrapped File structure before running `self install`:
 #   ~/.myenv/
 #   ├── bin/
 #   │   └── myenv           # 'myenv' CLI binary
 #   └── config/
-#       └── token           # Saved GitHub access token (read-only 600)
+#       ├── token           # Saved GitHub access token (read-only 600)
+#       └── settings.json   # Install settings (binary_source, etc.)
 #
 
 set -euo pipefail
@@ -29,12 +34,56 @@ BIN_DIR="${INSTALL_ROOT}/bin"
 LOCAL_BIN="${HOME}/.local/bin"
 CONFIG_DIR="${INSTALL_ROOT}/config"
 TOKEN_FILE="${CONFIG_DIR}/token"
+SETTINGS_FILE="${CONFIG_DIR}/settings.json"
+BINARY_SOURCE="prebuilt"
 
 TMP_DIR=""
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --binary-source)
+                if [ $# -lt 2 ]; then
+                    echo "Error: --binary-source requires prebuilt or source." >&2
+                    exit 1
+                fi
+                BINARY_SOURCE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                cat <<EOF
+Usage: install.sh [--binary-source prebuilt|source]
+
+Options:
+  --binary-source   How the myenv binary is installed (default: prebuilt)
+                    prebuilt - download release binary archive
+                    source   - download source at latest tag and build with cargo
+                               (requires Rust: https://rustup.rs)
+EOF
+                exit 0
+                ;;
+            *)
+                echo "Error: unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    case "$BINARY_SOURCE" in
+        prebuilt|source) ;;
+        *)
+            echo "Error: --binary-source must be prebuilt or source, got: $BINARY_SOURCE" >&2
+            exit 1
+            ;;
+    esac
+}
+
+parse_args "$@"
 
 cleanup() {
     if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"
+        TMP_DIR=""
     fi
 }
 trap cleanup EXIT
@@ -102,6 +151,68 @@ get_asset_digest() {
       sed -E 's/.*"digest": "([^"]+)".*/\1/' | head -n 1
 }
 
+ensure_cargo() {
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "Error: cargo not found. Install Rust from https://rustup.rs" >&2
+        exit 1
+    fi
+}
+
+download_and_build_source() {
+    local source_archive="$TMP_DIR/source.tar.gz"
+    local src_dir built_bin
+
+    echo "Downloading source for $LATEST_VERSION ..."
+    curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+        "https://api.github.com/repos/$OWNER/$REPO/tarball/$LATEST_VERSION" \
+        -o "$source_archive"
+
+    echo "Extracting source archive ..."
+    tar -xzf "$source_archive" -C "$TMP_DIR"
+
+    src_dir="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+    if [ -z "$src_dir" ]; then
+        echo "Error: could not find extracted source directory." >&2
+        exit 1
+    fi
+
+    echo "Building $BIN_NAME from source ..."
+    (cd "$src_dir" && cargo build --release --locked)
+
+    built_bin="$src_dir/target/release/$BIN_NAME"
+    if [ ! -f "$built_bin" ]; then
+        echo "Error: build did not produce $built_bin" >&2
+        exit 1
+    fi
+
+    cp "$built_bin" "$BIN_DIR/$BIN_NAME"
+    chmod 755 "$BIN_DIR/$BIN_NAME"
+}
+
+install_prebuilt_binary() {
+    local staging_dir file_name binary_path
+
+    staging_dir="${BIN_NAME}-${LATEST_VERSION}-${TARGET}"
+    file_name="${staging_dir}.${EXT}"
+
+    download_release_asset "$file_name" "$TMP_DIR/$file_name"
+
+    echo "Extracting and installing to $BIN_DIR ..."
+    tar -xzf "$TMP_DIR/$file_name" -C "$TMP_DIR"
+
+    if [ -f "$TMP_DIR/$staging_dir/$BIN_NAME" ]; then
+        binary_path="$TMP_DIR/$staging_dir/$BIN_NAME"
+    elif [ -f "$TMP_DIR/$BIN_NAME" ]; then
+        binary_path="$TMP_DIR/$BIN_NAME"
+    else
+        echo "Could not find $BIN_NAME in the downloaded archive." >&2
+        exit 1
+    fi
+
+    cp "$binary_path" "$BIN_DIR/$BIN_NAME"
+    chmod 755 "$BIN_DIR/$BIN_NAME"
+}
+
 echo "=== Installing $BIN_NAME ==="
 
 # Detect OS and architecture (target triple)
@@ -144,39 +255,29 @@ fi
 
 echo "Latest version: $LATEST_VERSION"
 
-# Save token after successfully verifying that it works
+# Save token and initial settings after verifying the token works
 mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR"
 if [ "$TOKEN_LOADED" = false ]; then
     printf '%s\n' "$GITHUB_TOKEN" > "$TOKEN_FILE"
 fi
 chmod 600 "$TOKEN_FILE"
-
-# Resolve platform-specific archive and download via asset ID
-STAGING_DIR="${BIN_NAME}-${LATEST_VERSION}-${TARGET}"
-FILE_NAME="${STAGING_DIR}.${EXT}"
-ASSETS_FILE_NAME="myenv-assets-${LATEST_VERSION}.tar.gz"
-BINARY_PATH=""
-
-TMP_DIR="$(mktemp -d)"
-
-download_release_asset "$FILE_NAME" "$TMP_DIR/$FILE_NAME"
-
-echo "Extracting and installing to $BIN_DIR ..."
-tar -xzf "$TMP_DIR/$FILE_NAME" -C "$TMP_DIR"
-
-if [ -f "$TMP_DIR/$STAGING_DIR/$BIN_NAME" ]; then
-    BINARY_PATH="$TMP_DIR/$STAGING_DIR/$BIN_NAME"
-elif [ -f "$TMP_DIR/$BIN_NAME" ]; then
-    BINARY_PATH="$TMP_DIR/$BIN_NAME"
-else
-    echo "Could not find $BIN_NAME in the downloaded archive." >&2
-    exit 1
+if [ ! -e "$SETTINGS_FILE" ] || [ ! -s "$SETTINGS_FILE" ]; then
+    printf '{\n  "binary_source": "%s"\n}\n' "$BINARY_SOURCE" > "$SETTINGS_FILE"
+    chmod 644 "$SETTINGS_FILE"
 fi
 
+TMP_DIR="$(mktemp -d)"
 mkdir -p "$BIN_DIR"
 
-install -m 755 "$BINARY_PATH" "$BIN_DIR/$BIN_NAME"
+if [ "$BINARY_SOURCE" = "source" ]; then
+    ensure_cargo
+    download_and_build_source
+else
+    install_prebuilt_binary
+fi
+
+cleanup
 
 if [ -z "${DEBUG:-}" ]; then
     echo "Bootstrapping complete myenv installation using 'self install'..."
