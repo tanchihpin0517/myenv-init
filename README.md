@@ -27,10 +27,10 @@ curl -fsSL https://tanchihpin0517.github.io/myenv-init/install.sh | bash -s -- -
 |------|--------|---------|-------------|
 | `--binary-source` | `prebuilt`, `source` | `prebuilt` | How the myenv binary is installed |
 
-This is saved to `~/.myenv/config/settings.json` as `binary_source`. `myenv self install` and `myenv sync` read it to decide whether to track and update the release binary.
+This is saved to `~/.myenv/config/settings.json` as `binary_source`. `myenv self install` and `myenv sync` read it to decide how to install and update the binary.
 
-- **`prebuilt`** — downloads the GitHub release binary for your platform; sync keeps it updated
-- **`source`** — downloads source at the latest release tag and runs `cargo build --release --locked`; sync skips binary updates
+- **`prebuilt`** — downloads the GitHub release binary for your platform; sync replaces it when a new release is detected
+- **`source`** — downloads source at the latest release tag and runs `cargo build --release --locked`; sync rebuilds from source when a new release is detected (same digest check as prebuilt)
 
 ### Source build
 
